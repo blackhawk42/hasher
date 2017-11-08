@@ -1,14 +1,15 @@
 package main
 
 import(
-	"hash"
 	"fmt"
 	"io"
 )
 
+// Represents a request for hash generation
 type HashRequest struct {
-	// Hash interface to use
-	Hasher hash.Hash
+	// Hash to use, represented as a string. The function will deal with
+	// actually creting the hash-generating interface
+	HasherString string
 	
 	// Input to get data to hash
 	Input io.Reader
@@ -20,8 +21,10 @@ type HashRequest struct {
 	Number int
 }
 
+// Represents a post-hashing report
 type HashReport struct {
-	// The request used to generate this report. Note that this includes number
+	// The request used to generate this report. Note that this includes Number,
+	// useful for comparing, sorting, etc.
 	*HashRequest
 	
 	// Hash sum
@@ -31,6 +34,7 @@ type HashReport struct {
 	Err error
 }
 
+// Utility method to simplify reporting of hashing results.
 func (r *HashReport) Report(format string) string {
 	if r.Err != nil {
 		return fmt.Sprintf("%v", r.Err)
