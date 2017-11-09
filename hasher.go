@@ -6,6 +6,7 @@ import(
 	"fmt"
 	"strings"
 	"sort"
+	"path/filepath"
 )
 
 const(
@@ -41,9 +42,9 @@ func main() {
 	// Flag config
 	
 	flag.Usage = func () {
-		fmt.Fprintf(os.Stderr, "use: %[1]s FILE1 [FILE2...]\n%[1]s -i\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "use: %[1]s FILE1 [FILE2...]\n%[1]s -stdin\n", filepath.Base(os.Args[0]) )
 		flag.PrintDefaults()
-		fmt.Fprintf(os.Stderr, "\nAvaiable hash algorithms: %s", strings.Join(AvaiableHashes, ", ") )
+		fmt.Fprintf(os.Stderr, "\nAvaiable hash algorithms: %s\n", strings.Join(AvaiableHashes, ", ") )
 	}
 	
 	var useStdin = flag.Bool("stdin", false, "use stdin for input data")
