@@ -10,7 +10,9 @@ import(
 	"hash/crc64"
 	"hash/adler32"
 	"hash/fnv"
+	
 	"io"
+	"fmt"
 )
 
 // Simple fucntion to get a hash from a certain io.Reader of data
@@ -81,4 +83,9 @@ func stringInSlice(str string, slice []string) bool {
         }
     }
     return false
+}
+
+// Print a report, with a sum on the specified format, to the specified output device
+func printReport(report *HashReport, reportFormat string, outDevice io.Writer) {
+	fmt.Fprintf(outDevice, "%s %s\n", report.Report(reportFormat), report.Name)
 }

@@ -3,6 +3,7 @@ package main
 import(
 	"flag"
 	"os"
+	"io"
 	"fmt"
 	"strings"
 	"sort"
@@ -13,9 +14,11 @@ const(
 	DEFAULT_REPORT_CHANNEL_BUFFER int = 10
 	DEFAULT_HASH_ALGORITHM string = "crc32"
 	
-	DEFAULT_REPORT_UPPER_FORMAT = "%X"
-	DEFAULT_REPORT_LOWER_FORMAT = "%x"
+	DEFAULT_REPORT_UPPER_FORMAT string = "%X"
+	DEFAULT_REPORT_LOWER_FORMAT string = "%x"
 )
+
+var DEFAULT_OUTPUT_DEVICE io.Writer = os.Stdout
 
 
 
@@ -122,14 +125,14 @@ func main() {
 			sort.Sort(reports)
 			
 			for _, report := range reports {
-				fmt.Printf("%s: %s\n", report.Name, report.Report(reportFormat) )
+				printReport(report, reportFormat, DEFAULT_OUTPUT_DEVICE)
 			}
 			
 		} else {
 			for i := 0; i < currentNumber; i++ {
 				report := <- reportChan
 				
-				fmt.Printf("%s: %s\n", report.Name, report.Report(reportFormat) )
+				printReport(report, reportFormat, DEFAULT_OUTPUT_DEVICE)
 			}
 		}
 	}
