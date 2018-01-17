@@ -46,17 +46,18 @@ func main() {
 	// Flag config
 	
 	flag.Usage = func () {
-		fmt.Fprintf(os.Stderr, "use: %[1]s FILE1 [FILE2...]\n%[1]s -stdin\n", filepath.Base(os.Args[0]) )
-		fmt.Printf("Concurrently calculate and print many hashes, mostly from Go's standard library.\n")
+		fmt.Fprintf(os.Stderr, "use: %[1]s [OPTIONS] FILE1 [FILE2...]\n%[1]s [OPTIONS] -stdin\n\n", filepath.Base(os.Args[0]) )
+		fmt.Printf("Concurrently calculate and print many hashes, mostly from Go's standard library.\n\n")
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nAvaiable hash algorithms: %s\n", strings.Join(AvaiableHashes, ", ") )
 	}
 	
 	var useStdin = flag.Bool("stdin", false, "use stdin for data input. Will calculate one hash")
-	var sortingMode = flag.Bool("sort", false, "sort results, in contrast to the inherent randomness of concurrency. May delay printing of results")
+	var sortingMode = flag.Bool("sort", false, "sort results in order of passed files, in contrast to the inherent randomness of concurrency. May delay printing of results")
 	var reportChannelBufferSize = flag.Int("b", DEFAULT_REPORT_CHANNEL_BUFFER, "`buffer size` of the channel to store results")
-	var algorithm = flag.String("hash", DEFAULT_HASH_ALGORITHM, "`hash algorithm` to use from the avaiable listed")
-	var upper = flag.Bool("U", false, "Report hashes in uppercase, instead of lowercase letters")
+	var algorithm = flag.String("hash", DEFAULT_HASH_ALGORITHM, "hash `algorithm` to use from the avaiable listed")
+	var upper = flag.Bool("U", false, "report hashes in uppercase, instead of lowercase letters")
+	var iterativeMode = flag.Bool("i", false, "iterative mode. No concurrency will be used. Useful for poor CPU or memory, to mitigitate I/O bottlenecks, etc.")
 	flag.Parse()
 	
 	// Make sure hash is avaiable
@@ -96,6 +97,30 @@ func main() {
 		}
 		
 		fmt.Printf(reportFormat + "\n", hash)
+		
+	} else if *iterativeMode {
+		
+		// An "artificial" report. It facilitates reporting and provides
+		// possibilities for debugging and extension
+		currentHash := &HashReport{HashRequest: &HashRequest{} }
+		
+		for _, file := range flag.Args() {
+			f, err := os.Open(file)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "opening %s: %v\n", file, err)
+				continue
+			}
+			defer f.Close()
+			
+			currentNumber++
+			
+			currentHash.Input = f
+			currentHash.Name = file
+			currentHash.Number = currentNumber
+			
+			currentHash.Sum, currentHash.Err = getHash(*algorithm, f)
+			printReport(currentHash, reportFormat, DEFAULT_OUTPUT_DEVICE)
+		}
 		
 	} else {
 		
