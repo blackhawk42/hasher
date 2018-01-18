@@ -3,7 +3,6 @@ package main
 import(
 	"flag"
 	"os"
-	"io"
 	"fmt"
 	"strings"
 	"sort"
@@ -18,7 +17,7 @@ const(
 	DEFAULT_REPORT_LOWER_FORMAT string = "%x"
 )
 
-var DEFAULT_OUTPUT_DEVICE io.Writer = os.Stdout
+var DEFAULT_OUTPUT_DEVICE *os.File = os.Stdout
 
 
 
@@ -58,6 +57,7 @@ func main() {
 	var algorithm = flag.String("hash", DEFAULT_HASH_ALGORITHM, "hash `algorithm` to use from the avaiable listed")
 	var upper = flag.Bool("U", false, "report hashes in uppercase, instead of lowercase letters")
 	var iterativeMode = flag.Bool("i", false, "iterative mode. No concurrency will be used. Useful for poor CPU or memory, to mitigitate I/O bottlenecks, etc.")
+	var outputFile = flag.String("output", "", "output `file`. If not specified, all is printed to stdout")
 	flag.Parse()
 	
 	// Make sure hash is avaiable
@@ -66,6 +66,20 @@ func main() {
 		fmt.Fprintf(os.Stderr, "hash not avaiable: %s\n", *algorithm)
 		flag.Usage()
 		os.Exit(1)
+	}
+	
+	// Set up output device
+	
+	var outputDevice *os.File = DEFAULT_OUTPUT_DEVICE
+	
+	if *outputFile != "" {
+		var err error
+		outputDevice, err = os.Create(*outputFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "opening output file %s: %v\n", *outputFile, err)
+			os.Exit(1)
+		}
+		defer outputDevice.Close()
 	}
 	
 	// Format config
@@ -119,7 +133,7 @@ func main() {
 			currentHash.Number = currentNumber
 			
 			currentHash.Sum, currentHash.Err = getHash(*algorithm, f)
-			printReport(currentHash, reportFormat, DEFAULT_OUTPUT_DEVICE)
+			printReport(currentHash, reportFormat, outputDevice)
 		}
 		
 	} else {
@@ -150,14 +164,14 @@ func main() {
 			sort.Sort(reports)
 			
 			for _, report := range reports {
-				printReport(report, reportFormat, DEFAULT_OUTPUT_DEVICE)
+				printReport(report, reportFormat, outputDevice)
 			}
 			
 		} else {
 			for i := 0; i < currentNumber; i++ {
 				report := <- reportChan
 				
-				printReport(report, reportFormat, DEFAULT_OUTPUT_DEVICE)
+				printReport(report, reportFormat, outputDevice)
 			}
 		}
 	}
