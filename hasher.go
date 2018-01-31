@@ -7,6 +7,8 @@ import(
 	"strings"
 	"sort"
 	"path/filepath"
+	
+	"github.com/blackhawk42/gohashlib"
 )
 
 const(
@@ -19,28 +21,6 @@ const(
 
 var DEFAULT_OUTPUT_DEVICE *os.File = os.Stdout
 
-
-
-var AvaiableHashes = []string{
-	"sha256",
-	"sha224",
-	"sha512",
-	"sha384",
-	"sha512/224",
-	"sha512/256",
-	"sha1",
-	"md5",
-	"crc32",
-	"crc64",
-	"adler32",
-	"fnv1-32",
-	"fnv1-64",
-	"fnv1-128",
-	"fnv1a-32",
-	"fnv1a-64",
-	"fnv1a-128",
-}
-
 func main() {
 	// Flag config
 	
@@ -48,7 +28,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "use: %[1]s [OPTIONS] FILE1 [FILE2...]\n%[1]s [OPTIONS] -stdin\n\n", filepath.Base(os.Args[0]) )
 		fmt.Printf("Concurrently calculate and print many hashes, mostly from Go's standard library.\n\n")
 		flag.PrintDefaults()
-		fmt.Fprintf(os.Stderr, "\nAvaiable hash algorithms: %s\n", strings.Join(AvaiableHashes, ", ") )
+		fmt.Fprintf(os.Stderr, "\nAvaiable hash algorithms: %s\n", strings.Join(gohashlib.AvaiableAlgorithms[:], ", ") )
 	}
 	
 	var useStdin = flag.Bool("stdin", false, "use stdin for data input. Will calculate one hash")
@@ -62,7 +42,7 @@ func main() {
 	
 	// Make sure hash is avaiable
 	
-	if !stringInSlice(*algorithm, AvaiableHashes) {
+	if !stringInSlice(*algorithm, gohashlib.AvaiableAlgorithms[:]) {
 		fmt.Fprintf(os.Stderr, "hash not avaiable: %s\n", *algorithm)
 		flag.Usage()
 		os.Exit(1)
@@ -104,7 +84,7 @@ func main() {
 	var currentNumber int = 0
 	
 	if *useStdin {
-		hash, err := getHash(*algorithm, os.Stdin)
+		hash, err := gohashlib.GetHash(*algorithm, os.Stdin)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "getting hash: %v\n", err)
 			os.Exit(1)
@@ -116,7 +96,7 @@ func main() {
 		
 		// An "artificial" report. It facilitates reporting and provides
 		// possibilities for debugging and extension
-		currentHash := &HashReport{HashRequest: &HashRequest{} }
+		currentHash := &gohashlib.HashReport{HashRequest: &gohashlib.HashRequest{Algorithm: *algorithm} }
 		
 		for _, file := range flag.Args() {
 			f, err := os.Open(file)
@@ -132,13 +112,13 @@ func main() {
 			currentHash.Name = file
 			currentHash.Number = currentNumber
 			
-			currentHash.Sum, currentHash.Err = getHash(*algorithm, f)
-			printReport(currentHash, reportFormat, outputDevice)
+			currentHash.Sum, currentHash.Err = gohashlib.GetHash(*algorithm, f)
+			gohashlib.PrintReport(currentHash, reportFormat, outputDevice)
 		}
 		
 	} else {
 		
-		reportChan := make(chan *HashReport, *reportChannelBufferSize)
+		reportChan := make(chan *gohashlib.HashReport, *reportChannelBufferSize)
 		
 		for _, file := range flag.Args() {
 			f, err := os.Open(file)
@@ -150,12 +130,12 @@ func main() {
 			
 			currentNumber++
 			
-			go goGetHash(&HashRequest{HasherString: *algorithm, Input: f, Number: currentNumber, Name: file}, reportChan)
+			go gohashlib.GoGetHash(&gohashlib.HashRequest{Algorithm: *algorithm, Input: f, Number: currentNumber, Name: file}, reportChan)
 			
 		}
 		
 		if *sortingMode {
-			reports := HashReportSlice( make([]*HashReport, currentNumber ) )
+			reports := gohashlib.HashReportSlice( make([]*gohashlib.HashReport, currentNumber ) )
 			
 			for i := 0; i < currentNumber; i++ {
 				reports[i] = <-reportChan
@@ -164,15 +144,25 @@ func main() {
 			sort.Sort(reports)
 			
 			for _, report := range reports {
-				printReport(report, reportFormat, outputDevice)
+				gohashlib.PrintReport(report, reportFormat, outputDevice)
 			}
 			
 		} else {
 			for i := 0; i < currentNumber; i++ {
 				report := <- reportChan
 				
-				printReport(report, reportFormat, outputDevice)
+				gohashlib.PrintReport(report, reportFormat, outputDevice)
 			}
 		}
 	}
+}
+
+// Is the string in the slice?
+func stringInSlice(str string, slice []string) bool {
+    for _, s := range slice {
+        if s == str {
+            return true
+        }
+    }
+    return false
 }
