@@ -7,162 +7,103 @@ import(
 	"strings"
 	"sort"
 	"path/filepath"
-	
-	"github.com/blackhawk42/gohashlib"
 )
 
 const(
-	DEFAULT_REPORT_CHANNEL_BUFFER int = 10
+	DEFAULT_USE_STDIN bool = false
+	DEFAULT_SORTING_MODE bool = false
 	DEFAULT_HASH_ALGORITHM string = "crc32"
-	
-	DEFAULT_REPORT_UPPER_FORMAT string = "%X"
-	DEFAULT_REPORT_LOWER_FORMAT string = "%x"
+	DEFAULT_REPORT_IN_UPPER bool = false
+	DEFAULT_WORKERS int = 0
 )
 
-var DEFAULT_OUTPUT_DEVICE *os.File = os.Stdout
+const (
+	HASH_NOT_SUPPORTED_ERROR_FORMAT = "hash algorithm not supported: %s"
+)
+
+// Flag config
+
+var useStdin = flag.Bool("stdin", DEFAULT_USE_STDIN, "Use stdin for data input. Will calculate one hash.")
+var sortingMode = flag.Bool("sort", DEFAULT_SORTING_MODE, "Sort results in order of passed files, in contrast to the inherent randomness of concurrency. May delay printing of results. Final results are similar to specifying a single worker, but sorting mode will do the processing concurrently using all specified workers and then sort.")
+var algorithm = flag.String("hash", DEFAULT_HASH_ALGORITHM, "Hash `algorithm` to use from the avaiable listed.")
+var upper = flag.Bool("U", DEFAULT_REPORT_IN_UPPER, "Report hashes in uppercase, instead of lowercase letters.")
+var workers = flag.Int("workers", DEFAULT_WORKERS, "The `number` of workers to use for cuncurrency. if <= 0, workers default to number of files to process. A single (1) worker (basically-but-not-exactly sequential mode) can be of help with I/O bottlenecks, and like sorting mode results are printed in the given order, without the overhead of actual sorting (if that flag is not used), but without the benefits of concurrent processing.")
 
 func main() {
-	// Flag config
-	
-	flag.Usage = func () {
-		fmt.Fprintf(os.Stderr, "use: %[1]s [OPTIONS] FILE1 [FILE2...]\n%[1]s [OPTIONS] -stdin\n\n", filepath.Base(os.Args[0]) )
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "use: %[1]s [OPTIONS] FILE1 [FILE2...]\nuse: %[1]s -stdin [OPTIONS]\n\n", filepath.Base(os.Args[0]) )
 		fmt.Printf("Concurrently calculate and print many hashes, mostly from Go's standard library.\n\n")
 		flag.PrintDefaults()
-		fmt.Fprintf(os.Stderr, "\nAvaiable hash algorithms: %s\n", strings.Join(gohashlib.AvaiableAlgorithms[:], ", ") )
+		fmt.Fprintf(os.Stderr, "\nAvaiable hash algorithms: %s\n", strings.Join(GetAvaiableAlgorithms(), ", ") )
 	}
-	
-	var useStdin = flag.Bool("stdin", false, "use stdin for data input. Will calculate one hash")
-	var sortingMode = flag.Bool("sort", false, "sort results in order of passed files, in contrast to the inherent randomness of concurrency. May delay printing of results")
-	var reportChannelBufferSize = flag.Int("b", DEFAULT_REPORT_CHANNEL_BUFFER, "`buffer size` of the channel to store results")
-	var algorithm = flag.String("hash", DEFAULT_HASH_ALGORITHM, "hash `algorithm` to use from the avaiable listed")
-	var upper = flag.Bool("U", false, "report hashes in uppercase, instead of lowercase letters")
-	var iterativeMode = flag.Bool("i", false, "iterative mode. No concurrency will be used. Useful for poor CPU or memory, to mitigitate I/O bottlenecks, etc.")
-	var outputFile = flag.String("output", "", "output `file`. If not specified, all is printed to stdout")
 	flag.Parse()
-	
-	// Make sure hash is avaiable
-	
-	if !stringInSlice(*algorithm, gohashlib.AvaiableAlgorithms[:]) {
-		fmt.Fprintf(os.Stderr, "hash not avaiable: %s\n", *algorithm)
-		flag.Usage()
-		os.Exit(1)
+
+	// Set up worker length
+	if *workers <= 0 {
+		*workers = len(flag.Args())
 	}
-	
-	// Set up output device
-	
-	var outputDevice *os.File = DEFAULT_OUTPUT_DEVICE
-	
-	if *outputFile != "" {
-		var err error
-		outputDevice, err = os.Create(*outputFile)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "opening output file %s: %v\n", *outputFile, err)
-			os.Exit(1)
-		}
-		defer outputDevice.Close()
-	}
-	
-	// Format config
-	
-	var reportFormat string
-	if *upper {
-		reportFormat = DEFAULT_REPORT_UPPER_FORMAT
-	} else {
-		reportFormat = DEFAULT_REPORT_LOWER_FORMAT
-	}
-	
+
 	// Other exit points
-	
+
+	// If no args and not using stdin, let's consider it another (sucessful) way to ask for help
 	if len(flag.Args()) == 0 && !*useStdin {
 		flag.Usage()
 		os.Exit(0)
 	}
-	
+
+	// Preemtively check against not valid algorithms
+	if !IsAnAvaiableAlgorithm(*algorithm) {
+		fmt.Fprintf(os.Stderr, HASH_NOT_SUPPORTED_ERROR_FORMAT + "\n", *algorithm)
+		flag.Usage()
+		os.Exit(1)
+	}
+
 	// Main logic
-	
-	// Number of reports actualy generated
-	var currentNumber int = 0
-	
+
+	// The special case of wanting to hash stdin
 	if *useStdin {
-		hash, err := gohashlib.GetHash(*algorithm, os.Stdin)
+		sum, err := HashReader(*algorithm, os.Stdin)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "getting hash: %v\n", err)
+			fmt.Fprintf(os.Stderr, "%v\n", err)
 			os.Exit(1)
-		}
-		
-		fmt.Printf(reportFormat + "\n", hash)
-		
-	} else if *iterativeMode {
-		
-		// An "artificial" report. It facilitates reporting and provides
-		// possibilities for debugging and extension
-		currentHash := &gohashlib.HashReport{HashRequest: &gohashlib.HashRequest{Algorithm: *algorithm} }
-		
-		for _, file := range flag.Args() {
-			f, err := os.Open(file)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "opening %s: %v\n", file, err)
-				continue
-			}
-			defer f.Close()
-			
-			currentNumber++
-			
-			currentHash.Input = f
-			currentHash.Name = file
-			currentHash.Number = currentNumber
-			
-			currentHash.Sum, currentHash.Err = gohashlib.GetHash(*algorithm, f)
-			gohashlib.PrintReport(currentHash, reportFormat, outputDevice)
-		}
-		
-	} else {
-		
-		reportChan := make(chan *gohashlib.HashReport, *reportChannelBufferSize)
-		
-		for _, file := range flag.Args() {
-			f, err := os.Open(file)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "opening %s: %v\n", file, err)
-				continue
-			}
-			defer f.Close()
-			
-			currentNumber++
-			
-			go gohashlib.GoGetHash(&gohashlib.HashRequest{Algorithm: *algorithm, Input: f, Number: currentNumber, Name: file}, reportChan)
-			
-		}
-		
-		if *sortingMode {
-			reports := gohashlib.HashReportSlice( make([]*gohashlib.HashReport, currentNumber ) )
-			
-			for i := 0; i < currentNumber; i++ {
-				reports[i] = <-reportChan
-			}
-			
-			sort.Sort(reports)
-			
-			for _, report := range reports {
-				gohashlib.PrintReport(report, reportFormat, outputDevice)
-			}
-			
 		} else {
-			for i := 0; i < currentNumber; i++ {
-				report := <- reportChan
-				
-				gohashlib.PrintReport(report, reportFormat, outputDevice)
+			if *upper {
+				fmt.Printf("%X\n", sum)
+			} else {
+				fmt.Printf("%x\n", sum)
 			}
+
+			os.Exit(0)
 		}
 	}
-}
 
-// Is the string in the slice?
-func stringInSlice(str string, slice []string) bool {
-    for _, s := range slice {
-        if s == str {
-            return true
-        }
-    }
-    return false
+	// In theory, we've already dealt with the possibility of the algorithm not
+	// being supported
+	requestsChan, _ := GenHashingPipeline(flag.Args(), *algorithm)
+
+	workersSlice := make([]<-chan *HashFileReport, *workers)
+	for i := range workersSlice {
+		workersSlice[i] = HashPipeline(requestsChan)
+	}
+
+	reportsChan := MergePipelines(workersSlice)
+
+	if *sortingMode {
+		reportsSlice := make( HashFileReportSlice, len(flag.Args()) )
+		i := 0
+		for report := range reportsChan {
+			reportsSlice[i] = report
+			i++
+		}
+
+		sort.Sort(reportsSlice)
+
+		reportsSlice.PrintAllReports(*upper)
+
+	} else { // We don't bother to create slices for non-sorting mode
+		for report := range reportsChan {
+			fmt.Printf("%s\n", report.Report(*upper))
+		}
+	}
+
 }
