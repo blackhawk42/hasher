@@ -9,12 +9,15 @@ import(
 	"path/filepath"
 )
 
+const VERSION string = "v3.0.0"
+
 const(
 	DEFAULT_USE_STDIN bool = false
 	DEFAULT_SORTING_MODE bool = false
 	DEFAULT_HASH_ALGORITHM string = "crc32"
 	DEFAULT_REPORT_IN_UPPER bool = false
 	DEFAULT_WORKERS int = 0
+	DEFAULT_SHOW_VERSION bool = false
 )
 
 const (
@@ -28,10 +31,11 @@ var sortingMode = flag.Bool("sort", DEFAULT_SORTING_MODE, "Sort results in order
 var algorithm = flag.String("hash", DEFAULT_HASH_ALGORITHM, "Hash `algorithm` to use from the avaiable listed.")
 var upper = flag.Bool("U", DEFAULT_REPORT_IN_UPPER, "Report hashes in uppercase, instead of lowercase letters.")
 var workers = flag.Int("workers", DEFAULT_WORKERS, "The `number` of workers to use for cuncurrency. if <= 0, workers default to number of files to process. A single (1) worker (basically-but-not-exactly sequential mode) can be of help with I/O bottlenecks, and like sorting mode results are printed in the given order, without the overhead of actual sorting (if that flag is not used), but without the benefits of concurrent processing.")
+var showVersion = flag.Bool("version", DEFAULT_SHOW_VERSION, "Show version and quit" )
 
 func main() {
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "use: %[1]s [OPTIONS] FILE1 [FILE2...]\nuse: %[1]s -stdin [OPTIONS]\n\n", filepath.Base(os.Args[0]) )
+		fmt.Fprintf(os.Stderr, "use: %[1]s [OPTIONS] FILE1 [FILE2...]\nuse: %[1]s -stdin [OPTIONS]\nuse: %[1]s -version\n\n", filepath.Base(os.Args[0]) )
 		fmt.Printf("Concurrently calculate and print many hashes, mostly from Go's standard library.\n\n")
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nAvaiable hash algorithms: %s\n", strings.Join(GetAvaiableAlgorithms(), ", ") )
@@ -44,6 +48,11 @@ func main() {
 	}
 
 	// Other exit points
+
+	if *showVersion {
+		fmt.Printf("%s\n", VERSION)
+		os.Exit(0)
+	}
 
 	// If no args and not using stdin, let's consider it another (sucessful) way to ask for help
 	if len(flag.Args()) == 0 && !*useStdin {
